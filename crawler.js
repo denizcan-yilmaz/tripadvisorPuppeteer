@@ -1,7 +1,8 @@
-// const { url } = require("inspector");
 const puppeteer = require("puppeteer");
+const redis = require("redis");
 
-async function extractReviews(page) {
+
+async function extractReviews(page, client) {
 
     let revs = [];
 
@@ -27,11 +28,12 @@ async function extractReviews(page) {
 
     let revIds = await page.$$eval(".cqoFv._T", elements=> elements.map(item=>item.getAttribute("data-reviewid")))
 
-    console.log(revIds);
+    // console.log(revIds);
 
     for(let i = 0; i<reviews.length; i++)
     {
-        revs.push({'hotelName': hotelName, 
+        revs.push({ 'reviewId': revIds[i],
+                    'hotelName': hotelName, 
                     'date': date[i].slice(14),
                     'rating': rating[i],    
                     'reviewTitle' :reviewTitles[i], 
@@ -41,8 +43,20 @@ async function extractReviews(page) {
                     'locationName': locationName,
                     'hotelId': hotelId
                 });
-    }
 
+        await client.HSET(revIds[i], 'hotelName', hotelName);
+        await client.HSET(revIds[i], 'hotelId', hotelId);
+        await client.HSET(revIds[i], 'locationName', locationName);
+        await client.HSET(revIds[i], 'locationId', locationId);
+        await client.HSET(revIds[i], 'date', date[i]);
+        await client.HSET(revIds[i], 'rating', rating[i]);
+        await client.HSET(revIds[i], 'reviewTitle', reviewTitles[i]);
+        await client.HSET(revIds[i], 'review', reviews[i]);
+        await client.HSET(revIds[i], 'reviewAuthor', author[i]);
+
+
+    }
+    
     return revs;
 
     // console.log(revs);
@@ -58,12 +72,12 @@ async function skipCookies(page) {
     }
 }
 
-async function scrapePage(page, url){
+async function scrapePage(page, url, client){
     await page.goto(url);
     let wholeReviews = [];
 
     while(1){
-        let revs = await extractReviews(page);
+        let revs = await extractReviews(page, client);
         wholeReviews = [...wholeReviews, ...revs];
         await page.waitForTimeout(250);
         // await page.$eval('a.ui_button.nav.next.primary', elem => elem.click());
@@ -104,10 +118,10 @@ async function getLinks(page, cityURL) {
         }
 
         if (flag==0)break;
-        console.log(hotelLinks.length);
+        // console.log(hotelLinks.length);
     }
     hotelLinks = [...new Set(hotelLinks)];
-    console.log(hotelLinks);
+    // console.log(hotelLinks);
     return hotelLinks;
 }
 
@@ -140,10 +154,19 @@ async function main(){
     // console.log(cityURL);
     wholeRev = [];
     let urls = await getLinks(page, cityURL);
-    console.log(urls.length);
+    // console.log(urls.length);
+
+    const client = redis.createClient();
+
+    client.on('connect', function() {
+        console.log('Connected');
+    })
+
+    client.connect();
+
 
     for (let i = 0; i< urls.length; i++){
-        let rev = await scrapePage(page, urls[i]);
+        let rev = await scrapePage(page, urls[i], client);
         wholeRev = [...new Set(wholeRev), ...new Set(rev)];
     }
 
@@ -154,6 +177,7 @@ async function main(){
     );
     console.log(`Finished scraping. Check out the file ./${process.argv[2]}.json`)
     browser.close();
+    client.disconnect();
 
 }
 
