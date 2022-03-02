@@ -1,9 +1,20 @@
 // const { url } = require("inspector");
 const puppeteer = require("puppeteer");
 
-async function extractReviews(page) {//helper function for extraction reviews
+async function extractReviews(page) {
 
     let revs = [];
+
+    let rating = await page.$$eval("div[class='emWez F1'] > span", elements=> elements.map(item=>item.getAttribute("class").slice(-2,-1)));
+
+    let locationName = await page.$eval(".KeVaw", element=> element.textContent.split(' '))
+    locationName = locationName[locationName.length-1];
+
+
+    url = page.url().split('-');
+    locationId = url[2].slice(1);
+    hotelId = url[1].slice(1);
+
     const hotelName = await page.$eval('h1', element => element.textContent)
 
     let reviewTitles = await page.$$eval(".fCitC", elements=> elements.map(item=>item.textContent))
@@ -12,12 +23,29 @@ async function extractReviews(page) {//helper function for extraction reviews
 
     let date = await page.$$eval(".euPKI._R.Me.S4.H3", elements=> elements.map(item=>item.textContent))
 
+    let author = await page.$$eval(".ui_header_link.bPvDb", elements=> elements.map(item=>item.textContent))
+
+    let revIds = await page.$$eval(".cqoFv._T", elements=> elements.map(item=>item.getAttribute("data-reviewid")))
+
+    console.log(revIds);
+
     for(let i = 0; i<reviews.length; i++)
     {
-        revs.push({'hotelName': hotelName, 'date': date[i],'reviewtitle' :reviewTitles[i], 'review': reviews[i]});
+        revs.push({'hotelName': hotelName, 
+                    'date': date[i].slice(14),
+                    'rating': rating[i],    
+                    'reviewTitle' :reviewTitles[i], 
+                    'review': reviews[i], 
+                    'reviewAuthor': author[i],
+                    'locationId': locationId,
+                    'locationName': locationName,
+                    'hotelId': hotelId
+                });
     }
 
     return revs;
+
+    // console.log(revs);
 }
 
 async function skipCookies(page) { 
