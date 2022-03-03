@@ -28,47 +28,52 @@ async function extractReviews(page, client) {
 
     let revIds = await page.$$eval(".cqoFv._T", elements=> elements.map(item=>item.getAttribute("data-reviewid")))
 
-    // console.log(revIds);
 
     for(let i = 0; i<reviews.length; i++)
-    {
-        revs.push({ 'reviewId': revIds[i],
-                    'hotelName': hotelName, 
-                    'date': date[i].slice(14),
-                    'rating': rating[i],    
-                    'reviewTitle' :reviewTitles[i], 
-                    'review': reviews[i], 
-                    'reviewAuthor': author[i],
-                    'locationId': locationId,
-                    'locationName': locationName,
-                    'hotelId': hotelId
-                });
+    {   
+        if (revIds[i] == "") continue;
+        try {
+        
+            revs.push({
+                        'hotelName': hotelName, 
+                        'hotelId': hotelId,
+                        'date': date[i].slice(14),
+                        'rating': rating[i],    
+                        'reviewTitle' :reviewTitles[i], 
+                        'review': reviews[i], 
+                        'reviewAuthor': author[i],
+                        'reviewId': revIds[i],
+                        'locationName': locationName,                        
+                        'locationId': locationId
+                    });
 
-        await client.HSET(revIds[i], 'hotelName', hotelName);
-        await client.HSET(revIds[i], 'hotelId', hotelId);
-        await client.HSET(revIds[i], 'locationName', locationName);
-        await client.HSET(revIds[i], 'locationId', locationId);
-        await client.HSET(revIds[i], 'date', date[i]);
-        await client.HSET(revIds[i], 'rating', rating[i]);
-        await client.HSET(revIds[i], 'reviewTitle', reviewTitles[i]);
-        await client.HSET(revIds[i], 'review', reviews[i]);
-        await client.HSET(revIds[i], 'reviewAuthor', author[i]);
-
+            await client.HSET(revIds[i], 'hotelName', hotelName);
+            await client.HSET(revIds[i], 'hotelId', hotelId);
+            await client.HSET(revIds[i], 'locationName', locationName);
+            await client.HSET(revIds[i], 'locationId', locationId);
+            await client.HSET(revIds[i], 'date', date[i]);
+            await client.HSET(revIds[i], 'rating', rating[i]);
+            await client.HSET(revIds[i], 'reviewTitle', reviewTitles[i]);
+            await client.HSET(revIds[i], 'review', reviews[i]);
+            await client.HSET(revIds[i], 'reviewAuthor', author[i]);
+        
+        } catch (error) {
+            
+            console.log('undef encountered');
+        
+        }
 
     }
     
     return revs;
 
-    // console.log(revs);
 }
 
 async function skipCookies(page) { 
     try {
         await page.waitForTimeout(500);
         await page.$eval('[id="onetrust-accept-btn-handler"]', element=> element.click());           
-        // console.log('pop up encountered and accepted');
     } catch (error) {
-        // console.log('no pop up')
     }
 }
 
@@ -80,7 +85,6 @@ async function scrapePage(page, url, client){
         let revs = await extractReviews(page, client);
         wholeReviews = [...wholeReviews, ...revs];
         await page.waitForTimeout(250);
-        // await page.$eval('a.ui_button.nav.next.primary', elem => elem.click());
 
         let flag = 0;
 
@@ -96,8 +100,6 @@ async function scrapePage(page, url, client){
 }
 
 async function getLinks(page, cityURL) {
-    // const browser = await puppeteer.launch({ headless: false });
-    // const page = await browser.newPage();
     hotelLinks = [];
     await page.goto(cityURL);
     await page.waitForTimeout(250);
@@ -106,22 +108,17 @@ async function getLinks(page, cityURL) {
 
     while(1) {
         let hotelsPerPage = await page.$$eval(".listing_title > a", elements=> elements.map(item=>item.href));
-        // console.log(hotelsPerPage.length)
         hotelLinks.push(...hotelsPerPage);
-        // console.log(hotelLinks.length)
         try{
             await page.waitForTimeout(250);
             await page.$eval('a.nav.next.ui_button.primary', elem => elem.click());
         } catch (error) {
             flag = 0;
-            // console.log('no button');
         }
 
         if (flag==0)break;
-        // console.log(hotelLinks.length);
     }
     hotelLinks = [...new Set(hotelLinks)];
-    // console.log(hotelLinks);
     return hotelLinks;
 }
 
@@ -132,14 +129,12 @@ async function getCityURL(page) {
     await skipCookies(page);
 
     let link = await page.$eval('div.main_content.ui_column.is-12 > div > div:nth-child(2) > div > div > div > div > div > div', elem => elem.getAttribute('onclick'));
-    // console.log(typeof link);
 
     link = link.split(",");
 
     await page.goto("https://www.tripadvisor.com" + link[3].replaceAll("'", "").trim());
     await page.waitForTimeout(100);
 
-    // console.log("clicking");
     await page.$eval('main > div.crvbs > div.bOoyS._T > div > div > div:nth-child(1) > a', elem => elem.click());
 
     return page.url()
@@ -148,13 +143,11 @@ async function getCityURL(page) {
 
 
 async function main(){
-    const browser = await puppeteer.launch({ headless: true });
+    const browser = await puppeteer.launch({ headless: false });
     const page = await browser.newPage();
     let cityURL = await getCityURL(page);
-    // console.log(cityURL);
     wholeRev = [];
     let urls = await getLinks(page, cityURL);
-    // console.log(urls.length);
 
     const client = redis.createClient();
 
@@ -162,7 +155,7 @@ async function main(){
         console.log('Connected');
     })
 
-    client.connect();
+    await client.connect();
 
 
     for (let i = 0; i< urls.length; i++){
@@ -175,9 +168,10 @@ async function main(){
         if (err) throw err;
         }
     );
+
     console.log(`Finished scraping. Check out the file ./${process.argv[2]}.json`)
-    browser.close();
-    client.disconnect();
+    await browser.close();
+    await client.disconnect();
 
 }
 
